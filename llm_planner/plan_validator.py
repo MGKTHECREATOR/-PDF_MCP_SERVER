@@ -52,6 +52,14 @@ def _validate_chart(chart: ChartSpec, columns: set[str], data: list[dict[str, An
     if chart.top_n is not None and chart.top_n <= 0:
         return f"top_n must be a positive integer, got {chart.top_n}"
 
+    if chart.start_index is not None or chart.end_index is not None:
+        if chart.start_index is None or chart.end_index is None:
+            return "start_index and end_index must both be set together, or both left null"
+        if chart.start_index < 0:
+            return f"start_index must be >= 0, got {chart.start_index}"
+        if chart.end_index <= chart.start_index:
+            return f"end_index ({chart.end_index}) must be greater than start_index ({chart.start_index})"
+
     return None
 
 

@@ -20,8 +20,15 @@ class ChartSpec(BaseModel):
     sort_order: Literal["asc", "desc", "none"] = "none"
     top_n: Optional[int] = Field(
         default=None,
-        description="If set, only chart the top N categories/values."
+        description="Limit to top N categories/values. Use only when the user's "
+                     "request implies a limited subset is wanted (e.g. 'top 10')."
     )
+    start_index: Optional[int] = Field(
+        default=None,
+        description="Used with end_index to split a large category set into "
+                     "multiple sequential charts without dropping any category."
+    )
+    end_index: Optional[int] = None
 
 
 class TableSpec(BaseModel):

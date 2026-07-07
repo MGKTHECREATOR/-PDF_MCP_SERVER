@@ -1,10 +1,12 @@
 """
 test_report_composer.py
 
-End-to-end test: calls Gemini for a plan, validates it, then composes
-the final PDF using report_composer.py. Also includes a manual-plan
-test to specifically check chart aspect ratios (bar, horizontal_bar,
-pie, line) side by side in one document.
+Two independent tests using two different datasets:
+1. Aspect-ratio check — manual plan, all 4 chart types, original clean
+   student dataset (unrelated to whether Gemini "gets" the data — this
+   is purely a rendering/layout check).
+2. Real Gemini planning test — using a messier, aggregate-style dataset
+   to see how the LLM adapts its chart/aggregation choices.
 
 Usage:
     uv run test_report_composer.py
@@ -22,7 +24,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 OUTPUT_DIR = Path("temp_pdfs")
 
-SAMPLE_DATA = [
+# Used only for the manual aspect-ratio test below (test_all_chart_types_manual)
+STUDENT_SAMPLE_DATA = [
     {"student_id":168,"first_name":"Pooja","last_name":"Ravichandran","email":"pooja.ravichandran@student.college.edu","date_of_birth":"2000-05-13T00:00:00","department_id":3,"admission_year":2019,"gpa":9.90},
     {"student_id":19,"first_name":"Arun","last_name":"Murthy","email":"arun.murthy@student.college.edu","date_of_birth":"2006-10-19T00:00:00","department_id":1,"admission_year":2024,"gpa":9.89},
     {"student_id":422,"first_name":"Nithya","last_name":"Chandrasekaran","email":"nithya.chandrasekaran@student.college.edu","date_of_birth":"2006-01-25T00:00:00","department_id":6,"admission_year":2023,"gpa":9.88},
@@ -35,21 +38,31 @@ SAMPLE_DATA = [
     {"student_id":458,"first_name":"Rahul","last_name":"Ganapathy","email":"rahul.ganapathy@student.college.edu","date_of_birth":"2006-10-22T00:00:00","department_id":7,"admission_year":2023,"gpa":9.82},
 ]
 
+# Used for the real Gemini planning test below (test_end_to_end_with_gemini) —
+# a messier "generic" aggregate result, per your unstructured-data test request
+GENERIC_SAMPLE_DATA = [
+    {"admissionYear": 2019, "avgGPA": 7.42, "totalStudents": 40},
+    {"admissionYear": 2020, "avgGPA": 7.61, "totalStudents": 55},
+    {"admissionYear": 2021, "avgGPA": 7.85, "totalStudents": 62},
+    {"admissionYear": 2022, "avgGPA": 7.30, "totalStudents": 70},
+    {"admissionYear": 2023, "avgGPA": 8.02, "totalStudents": 85},
+]
+
 
 def test_end_to_end_with_gemini():
     """Real pipeline: Gemini plans, we validate, then compose the PDF."""
     print("=" * 70)
-    print("TEST 1: End-to-end with real Gemini plan")
+    print("TEST 1: End-to-end with real Gemini plan (generic aggregate data)")
     print("=" * 70)
 
     raw_plan = generate_plan(
-        report_type="students",
-        total_records=len(SAMPLE_DATA),
-        data=SAMPLE_DATA,
+        report_type="generic",
+        total_records=len(GENERIC_SAMPLE_DATA),
+        data=GENERIC_SAMPLE_DATA,
     )
-    plan = validate_plan(raw_plan, SAMPLE_DATA)
+    plan = validate_plan(raw_plan, GENERIC_SAMPLE_DATA)
 
-    output_path = compose_pdf(plan, SAMPLE_DATA, OUTPUT_DIR / "test_end_to_end.pdf")
+    output_path = compose_pdf(plan, GENERIC_SAMPLE_DATA, OUTPUT_DIR / "test_end_to_end.pdf")
     print(f"✅ Saved to {output_path}\n")
 
 
@@ -57,7 +70,9 @@ def test_all_chart_types_manual():
     """
     Manually constructed plan forcing all 4 chart types + a table +
     a summary, in one PDF. This is the important one for checking
-    the pie/horizontal_bar aspect ratio distortion issue.
+    the pie/horizontal_bar aspect ratio distortion issue — uses the
+    original clean student dataset since this test is about rendering,
+    not LLM judgment.
     """
     print("=" * 70)
     print("TEST 2: Manual plan with all chart types (check aspect ratios here)")
@@ -117,7 +132,7 @@ def test_all_chart_types_manual():
         ],
     )
 
-    output_path = compose_pdf(plan, SAMPLE_DATA, OUTPUT_DIR / "test_all_chart_types.pdf")
+    output_path = compose_pdf(plan, STUDENT_SAMPLE_DATA, OUTPUT_DIR / "test_all_chart_types.pdf")
     print(f"✅ Saved to {output_path}\n")
 
 
@@ -128,7 +143,7 @@ def test_empty_plan_fallback():
     print("=" * 70)
 
     plan = ReportPlan(report_title="Fallback Test", sections=[])
-    output_path = compose_pdf(plan, SAMPLE_DATA, OUTPUT_DIR / "test_fallback.pdf")
+    output_path = compose_pdf(plan, STUDENT_SAMPLE_DATA, OUTPUT_DIR / "test_fallback.pdf")
     print(f"✅ Saved to {output_path}\n")
 
 
@@ -141,5 +156,5 @@ if __name__ == "__main__":
     print(f"All done. Open the PDFs in {OUTPUT_DIR} to inspect:")
     print("  - test_all_chart_types.pdf  → check pie/horizontal_bar distortion")
     print("  - test_fallback.pdf         → should show a plain raw-data table")
-    print("  - test_end_to_end.pdf       → real Gemini-planned report")
+    print("  - test_end_to_end.pdf       → real Gemini-planned report on generic aggregate data")
     print("=" * 70)

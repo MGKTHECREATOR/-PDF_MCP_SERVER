@@ -80,7 +80,7 @@ def _aggregate(data: list[dict[str, Any]], chart: ChartSpec) -> tuple[list, list
 
 
 def _apply_sort_and_limit(labels: list, values: list, chart: ChartSpec) -> tuple[list, list]:
-    """Applies sort_order and top_n from the chart spec."""
+    """Applies sort_order, then top_n OR start_index/end_index from the chart spec."""
     if chart.sort_order in ("asc", "desc"):
         paired = sorted(
             zip(labels, values),
@@ -90,7 +90,10 @@ def _apply_sort_and_limit(labels: list, values: list, chart: ChartSpec) -> tuple
         labels, values = zip(*paired) if paired else ([], [])
         labels, values = list(labels), list(values)
 
-    if chart.top_n is not None:
+    if chart.start_index is not None and chart.end_index is not None:
+        labels = labels[chart.start_index:chart.end_index]
+        values = values[chart.start_index:chart.end_index]
+    elif chart.top_n is not None:
         labels = labels[: chart.top_n]
         values = values[: chart.top_n]
 

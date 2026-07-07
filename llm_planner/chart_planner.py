@@ -2,14 +2,15 @@
 llm_planner/chart_planner.py
 
 Calls Gemini once per report to produce a complete ReportPlan.
-Sends only a schema + sample rows + basic stats (NOT the full dataset)
-to keep token cost down — the LLM decides WHAT to chart, the actual
-aggregation over the full dataset happens later in pdf_builder/.
+Now accepts optional user_instructions — the original natural language
+request — so the LLM can honor EXPLICIT chart/axis requests instead of
+always using its own judgment.
 """
 
 import json
 import logging
-from typing import Any
+import os
+from typing import Any, Optional
 
 from google import genai
 from google.genai import types
@@ -17,20 +18,23 @@ from pydantic import ValidationError
 
 from llm_planner.plan_schema import ReportPlan
 from llm_planner.prompt_templates import SYSTEM_PROMPT
-from llm_planner import GEMINI_API_KEY
+
+import time
+from google.genai.errors import ClientError
+
+RATE_LIMIT_RETRY_DELAY = 25  # seconds — slightly above the "retry in Xs" Gemini reports
+MAX_RATE_LIMIT_RETRIES = 2
 
 logger = logging.getLogger("chart_planner")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_NAME = "gemini-2.5-flash"  # good default: fast + cheap + strong at structured JSON
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+MODEL_NAME = "gemini-2.5-flash"
 
 MAX_SAMPLE_ROWS = 8
-MAX_RETRIES = 1  # one retry with error feedback, then fall back
+MAX_RETRIES = 1
 
 
 def _infer_column_types(data: list[dict[str, Any]]) -> dict[str, str]:
-    """Best-effort dtype guess per column, used to help the LLM
-    avoid requesting numeric aggregation on text fields."""
     types_map: dict[str, str] = {}
     for row in data:
         for key, value in row.items():
@@ -41,15 +45,13 @@ def _infer_column_types(data: list[dict[str, Any]]) -> dict[str, str]:
             elif isinstance(value, (int, float)):
                 types_map[key] = "numeric"
             elif value is None:
-                continue  # wait for a non-null sample
+                continue
             else:
                 types_map[key] = "text"
     return types_map
 
 
 def _compute_numeric_stats(data: list[dict[str, Any]], columns: dict[str, str]) -> dict[str, dict]:
-    """min/max/avg for numeric columns only — gives the LLM enough
-    context to make sensible chart decisions without seeing every row."""
     stats: dict[str, dict] = {}
     for col, dtype in columns.items():
         if dtype != "numeric":
@@ -68,6 +70,7 @@ def _build_user_message(
     report_type: str,
     total_records: int,
     data: list[dict[str, Any]],
+    user_instructions: Optional[str] = None,
     previous_error: str | None = None,
 ) -> str:
     columns = _infer_column_types(data)
@@ -85,8 +88,23 @@ def _build_user_message(
     message = (
         "Here is the data context for this report:\n\n"
         f"{json.dumps(payload, indent=2, default=str)}\n\n"
-        "Produce a ReportPlan JSON as instructed."
     )
+
+    if user_instructions and user_instructions.strip():
+        message += (
+            "ORIGINAL USER REQUEST (verbatim):\n"
+            f'"{user_instructions.strip()}"\n\n'
+            "Check this request for EXPLICIT chart/visualization instructions "
+            "(chart type, specific fields for x-axis/y-axis, etc.) before "
+            "deciding the plan. If explicit instructions are present, follow "
+            "them exactly as described in your system instructions. If the "
+            "request does not specify visualization details, use your own "
+            "judgment as normal.\n\n"
+        )
+    else:
+        message += "No specific user instructions were provided beyond the data request — use your own judgment for chart selection.\n\n"
+
+    message += "Produce a ReportPlan JSON as instructed."
 
     if previous_error:
         message += (
@@ -102,26 +120,36 @@ def generate_plan(
     report_type: str,
     total_records: int,
     data: list[dict[str, Any]],
+    user_instructions: Optional[str] = None,
 ) -> ReportPlan:
-    """
-    Calls Gemini once (with up to one retry) to produce a ReportPlan.
-    Raises ValueError if Gemini fails to produce a valid plan after retries —
-    caller (report_composer.py) should catch this and fall back to a raw table.
-    """
     previous_error: str | None = None
 
     for attempt in range(MAX_RETRIES + 1):
-        user_message = _build_user_message(report_type, total_records, data, previous_error)
-
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",  # forces valid JSON output, no markdown fences
-                max_output_tokens=2000,
-            ),
+        user_message = _build_user_message(
+            report_type, total_records, data, user_instructions, previous_error
         )
+
+        for rate_limit_attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            try:
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=user_message,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        max_output_tokens=2000,
+                    ),
+                )
+                break  # success — exit the rate-limit retry loop
+            except ClientError as e:
+                if e.code == 429 and rate_limit_attempt < MAX_RATE_LIMIT_RETRIES:
+                    logger.warning(
+                        f"Rate limited by Gemini — waiting {RATE_LIMIT_RETRY_DELAY}s "
+                        f"before retry ({rate_limit_attempt + 1}/{MAX_RATE_LIMIT_RETRIES})"
+                    )
+                    time.sleep(RATE_LIMIT_RETRY_DELAY)
+                    continue
+                raise  # not a 429, or out of rate-limit retries — bubble up
 
         raw_text = response.text
 
