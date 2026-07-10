@@ -1,3 +1,4 @@
+# report_composer.py
 """
 pdf_builder/report_composer.py
 
@@ -32,20 +33,16 @@ logger = logging.getLogger("report_composer")
 styles = getSampleStyleSheet()
 
 TITLE_STYLE = ParagraphStyle(
-    "ReportTitle",
-    parent=styles["Title"],
-    fontSize=20,
-    textColor=colors.HexColor("#1F4E79"),
-    spaceAfter=6,
+    "ReportTitle", parent=styles["Title"],
+    fontSize=22, textColor=colors.HexColor("#1F3864"),
+    spaceAfter=14, alignment=1,  # centered
 )
 
 SECTION_TITLE_STYLE = ParagraphStyle(
-    "SectionTitle",
-    parent=styles["Heading2"],
-    fontSize=13,
-    textColor=colors.HexColor("#3B6E9E"),
-    spaceBefore=14,
-    spaceAfter=8,
+    "SectionTitle", parent=styles["Heading2"],
+    fontSize=14, textColor=colors.HexColor("#1F3864"),
+    spaceBefore=18, spaceAfter=10,
+    borderPadding=0,
 )
 
 SUMMARY_STYLE = ParagraphStyle(
@@ -61,9 +58,12 @@ CHART_IMAGE_WIDTH = 6.5 * inch  # matches usable page width used in table_render
 MAX_CHART_HEIGHT = 7.5 * inch   # avoid a single tall chart overflowing the page
 
 
-def _render_summary_section(text: str) -> list:
-    """Returns flowables for a summary text section."""
-    return [Paragraph(text, SUMMARY_STYLE)]
+def _render_summary_section(points: list[str]) -> list:
+    flowables = [Paragraph("Executive Summary", SECTION_TITLE_STYLE)]
+    for point in points:
+        flowables.append(Paragraph(f"•&nbsp;&nbsp;{point}", BULLET_STYLE))
+    flowables.append(Spacer(1, 0.15 * inch))
+    return flowables
 
 
 def _render_chart_section(chart_spec, data: list[dict[str, Any]]) -> list:
@@ -172,13 +172,19 @@ def compose_pdf(
     else:
         for section in plan.sections:
             if section.section_type == "summary" and section.summary:
-                flowables.extend(_render_summary_section(section.summary.text))
+                flowables.extend(_render_summary_section(section.summary.points))
 
             elif section.section_type == "chart" and section.chart:
                 flowables.extend(_render_chart_section(section.chart, data))
 
             elif section.section_type == "table" and section.table:
                 flowables.extend(_render_table_section(section.table, data))
+            
+            elif section.section_type == "insights" and section.insights:
+                flowables.extend(_render_insights_section(section.insights.points))
+
+            elif section.section_type == "recommendations" and section.recommendations:
+                flowables.extend(_render_recommendations_section(section.recommendations.points))
 
             else:
                 logger.warning(f"Skipping malformed section: {section}")
@@ -187,3 +193,29 @@ def compose_pdf(
     logger.info(f"PDF written to {output_path}")
 
     return output_path
+
+
+BULLET_STYLE = ParagraphStyle(
+    "BulletText",
+    parent=styles["Normal"],
+    fontSize=10,
+    leading=15,
+    leftIndent=14,
+    bulletIndent=0,
+    spaceAfter=6,
+    textColor=colors.HexColor("#333333"),
+)
+
+def _render_insights_section(points: list[str]) -> list:
+    flowables = [Paragraph("Key Insights", SECTION_TITLE_STYLE)]
+    for point in points:
+        flowables.append(Paragraph(f"•&nbsp;&nbsp;{point}", BULLET_STYLE))
+    flowables.append(Spacer(1, 0.15 * inch))
+    return flowables
+
+def _render_recommendations_section(points: list[str]) -> list:
+    flowables = [Paragraph("Recommendations", SECTION_TITLE_STYLE)]
+    for point in points:
+        flowables.append(Paragraph(f"•&nbsp;&nbsp;{point}", BULLET_STYLE))
+    flowables.append(Spacer(1, 0.15 * inch))
+    return flowables

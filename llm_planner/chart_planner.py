@@ -20,7 +20,7 @@ from llm_planner.plan_schema import ReportPlan
 from llm_planner.prompt_templates import SYSTEM_PROMPT
 
 import time
-from google.genai.errors import ClientError
+from google.genai.errors import ClientError, ServerError
 
 RATE_LIMIT_RETRY_DELAY = 25  # seconds — slightly above the "retry in Xs" Gemini reports
 MAX_RATE_LIMIT_RETRIES = 2
@@ -116,6 +116,14 @@ def _build_user_message(
     return message
 
 
+import time
+
+RATE_LIMIT_RETRY_DELAY = 25
+MAX_RATE_LIMIT_RETRIES = 2
+SERVER_ERROR_RETRY_DELAY = 15
+MAX_SERVER_ERROR_RETRIES = 3
+
+
 def generate_plan(
     report_type: str,
     total_records: int,
@@ -129,7 +137,11 @@ def generate_plan(
             report_type, total_records, data, user_instructions, previous_error
         )
 
-        for rate_limit_attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        response = None
+        rate_limit_attempt = 0
+        server_error_attempt = 0
+
+        while response is None:
             try:
                 response = client.models.generate_content(
                     model=MODEL_NAME,
@@ -137,19 +149,29 @@ def generate_plan(
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
                         response_mime_type="application/json",
-                        max_output_tokens=2000,
+                        max_output_tokens=4000,
                     ),
                 )
-                break  # success — exit the rate-limit retry loop
             except ClientError as e:
                 if e.code == 429 and rate_limit_attempt < MAX_RATE_LIMIT_RETRIES:
+                    rate_limit_attempt += 1
                     logger.warning(
-                        f"Rate limited by Gemini — waiting {RATE_LIMIT_RETRY_DELAY}s "
-                        f"before retry ({rate_limit_attempt + 1}/{MAX_RATE_LIMIT_RETRIES})"
+                        f"Rate limited (429) — waiting {RATE_LIMIT_RETRY_DELAY}s "
+                        f"before retry ({rate_limit_attempt}/{MAX_RATE_LIMIT_RETRIES})"
                     )
                     time.sleep(RATE_LIMIT_RETRY_DELAY)
                     continue
-                raise  # not a 429, or out of rate-limit retries — bubble up
+                raise
+            except ServerError as e:
+                if e.code == 503 and server_error_attempt < MAX_SERVER_ERROR_RETRIES:
+                    server_error_attempt += 1
+                    logger.warning(
+                        f"Gemini overloaded (503) — waiting {SERVER_ERROR_RETRY_DELAY}s "
+                        f"before retry ({server_error_attempt}/{MAX_SERVER_ERROR_RETRIES})"
+                    )
+                    time.sleep(SERVER_ERROR_RETRY_DELAY)
+                    continue
+                raise
 
         raw_text = response.text
 
@@ -157,7 +179,6 @@ def generate_plan(
             parsed = json.loads(raw_text)
             plan = ReportPlan.model_validate(parsed)
             return plan
-
         except (json.JSONDecodeError, ValidationError) as e:
             previous_error = str(e)
             logger.warning(f"Plan generation attempt {attempt + 1} failed: {previous_error}")

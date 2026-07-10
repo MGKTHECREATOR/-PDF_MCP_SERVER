@@ -1,9 +1,5 @@
 """
 llm_planner/plan_schema.py
-
-Defines the structured "report plan" the LLM must produce.
-This is the contract between the LLM's decision-making and the
-deterministic rendering code in pdf_builder/.
 """
 
 from typing import Literal, Optional
@@ -11,28 +7,18 @@ from pydantic import BaseModel, Field
 
 
 class ChartSpec(BaseModel):
-    """A single chart the LLM has decided to include."""
-    chart_type: Literal["bar", "horizontal_bar", "pie", "line"]
+    chart_type: Literal["bar", "horizontal_bar", "pie", "line", "scatter"]
     title: str
     x_field: str
     y_field: Optional[str] = None
     aggregation: Literal["none", "count", "avg", "sum", "max", "min"] = "none"
     sort_order: Literal["asc", "desc", "none"] = "none"
-    top_n: Optional[int] = Field(
-        default=None,
-        description="Limit to top N categories/values. Use only when the user's "
-                     "request implies a limited subset is wanted (e.g. 'top 10')."
-    )
-    start_index: Optional[int] = Field(
-        default=None,
-        description="Used with end_index to split a large category set into "
-                     "multiple sequential charts without dropping any category."
-    )
+    top_n: Optional[int] = None
+    start_index: Optional[int] = None
     end_index: Optional[int] = None
 
 
 class TableSpec(BaseModel):
-    """A data table the LLM has decided to include."""
     title: str
     columns: list[str]
     sort_by: Optional[str] = None
@@ -41,27 +27,29 @@ class TableSpec(BaseModel):
 
 
 class SummarySpec(BaseModel):
-    """A short narrative text block the LLM has written."""
-    text: str
+    """Executive summary — now a set of 4-5 bullet points, not one paragraph."""
+    points: list[str]
+
+
+class InsightSpec(BaseModel):
+    """Key insights — factual observations grounded in the data."""
+    points: list[str]
+
+
+class RecommendationSpec(BaseModel):
+    """Actionable recommendations following from the insights."""
+    points: list[str]
 
 
 class SectionSpec(BaseModel):
-    """
-    One section of the report, in the order it should appear.
-    Exactly one of chart/table/summary should be populated,
-    matching section_type.
-    """
-    section_type: Literal["chart", "table", "summary"]
+    section_type: Literal["chart", "table", "summary", "insights", "recommendations"]
     chart: Optional[ChartSpec] = None
     table: Optional[TableSpec] = None
     summary: Optional[SummarySpec] = None
+    insights: Optional[InsightSpec] = None
+    recommendations: Optional[RecommendationSpec] = None
 
 
 class ReportPlan(BaseModel):
-    """
-    The complete rendering plan for one report.
-    This is the ONLY thing the LLM returns — report_composer.py
-    executes this deterministically against the real data.
-    """
     report_title: str
     sections: list[SectionSpec]

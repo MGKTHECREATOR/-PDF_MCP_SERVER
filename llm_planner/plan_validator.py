@@ -49,6 +49,14 @@ def _validate_chart(chart: ChartSpec, columns: set[str], data: list[dict[str, An
                 f"field '{target_field}'"
             )
 
+    if chart.chart_type == "scatter":
+        if chart.y_field is None:
+            return "scatter chart requires a y_field to be set"
+        if not _is_numeric_column(data, chart.x_field):
+            return f"scatter chart x_field '{chart.x_field}' is not numeric"
+        if not _is_numeric_column(data, chart.y_field):
+            return f"scatter chart y_field '{chart.y_field}' is not numeric"
+
     if chart.top_n is not None and chart.top_n <= 0:
         return f"top_n must be a positive integer, got {chart.top_n}"
 
@@ -75,6 +83,16 @@ def _validate_table(table: TableSpec, columns: set[str]) -> str | None:
     if table.max_rows is not None and table.max_rows <= 0:
         return f"max_rows must be a positive integer, got {table.max_rows}"
 
+    return None
+
+
+def _validate_points(points: list[str] | None) -> str | None:
+    """Shared validation for insights/recommendations — both are just a
+    list of non-empty strings."""
+    if not points:
+        return "points list is missing or empty"
+    if not all(isinstance(p, str) and p.strip() for p in points):
+        return "points list contains an empty or non-string entry"
     return None
 
 
@@ -111,8 +129,22 @@ def validate_plan(plan: ReportPlan, data: list[dict[str, Any]]) -> ReportPlan:
                 error = _validate_table(section.table, columns)
 
         elif section.section_type == "summary":
-            if section.summary is None or not section.summary.text.strip():
-                error = "section_type is 'summary' but summary text is missing/empty"
+            if section.summary is None:
+                error = "section_type is 'summary' but summary field is missing"
+            else:
+                error = _validate_points(section.summary.points)
+
+        elif section.section_type == "insights":
+            if section.insights is None:
+                error = "section_type is 'insights' but insights field is missing"
+            else:
+                error = _validate_points(section.insights.points)
+
+        elif section.section_type == "recommendations":
+            if section.recommendations is None:
+                error = "section_type is 'recommendations' but recommendations field is missing"
+            else:
+                error = _validate_points(section.recommendations.points)
 
         else:
             error = f"unknown section_type '{section.section_type}'"

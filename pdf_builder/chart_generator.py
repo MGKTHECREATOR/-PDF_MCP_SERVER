@@ -1,3 +1,5 @@
+# chart_generator.py
+
 """
 pdf_builder/chart_generator.py
 
@@ -305,6 +307,28 @@ def render_line_chart(chart: ChartSpec, data: list[dict[str, Any]]) -> tuple[io.
     return _fig_to_buffer(fig)
 
 
+def render_scatter_chart(chart: ChartSpec, data: list[dict[str, Any]]) -> tuple[io.BytesIO, float]:
+    """Scatter plot — best for showing relationship/correlation between two numeric fields."""
+    x_values = [row.get(chart.x_field) for row in data if isinstance(row.get(chart.x_field), (int, float))]
+    y_values = [row.get(chart.y_field) for row in data if isinstance(row.get(chart.y_field), (int, float))]
+
+    if not x_values or not y_values or len(x_values) != len(y_values):
+        raise ValueError(f"No valid numeric pairs to plot for scatter chart '{chart.title}'")
+
+    fig, ax = plt.subplots(figsize=(7, 4.5), dpi=150)
+    ax.scatter(x_values, y_values, color="#3B6E9E", s=60, edgecolor="white", linewidth=0.8)
+
+    ax.set_title(chart.title, fontsize=12, fontweight="bold", pad=12)
+    ax.set_xlabel(chart.x_field.replace("_", " ").title())
+    ax.set_ylabel((chart.y_field or "").replace("_", " ").title())
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(True, linestyle="--", alpha=0.3)
+
+    fig.tight_layout()
+    return _fig_to_buffer(fig)
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -314,6 +338,7 @@ _RENDERERS = {
     "horizontal_bar": render_horizontal_bar_chart,
     "pie": render_pie_chart,
     "line": render_line_chart,
+    "scatter": render_scatter_chart,
 }
 
 
