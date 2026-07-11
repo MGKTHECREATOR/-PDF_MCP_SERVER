@@ -143,17 +143,19 @@ def _render_fallback_table(data: list[dict[str, Any]]) -> list:
 def compose_pdf(
     plan: ReportPlan,
     data: list[dict[str, Any]],
-    output_path: str | Path,
-) -> Path:
+    output: str | Path | Any,
+) -> None:
     """
     Builds the complete PDF from a validated ReportPlan and the raw data.
-    Writes the file to output_path and returns the Path.
+    `output` can be a file path (str/Path) OR an in-memory buffer (io.BytesIO).
     """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(output, (str, Path)):
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output = str(output)
 
     doc = SimpleDocTemplate(
-        str(output_path),
+        output,
         pagesize=letter,
         topMargin=0.7 * inch,
         bottomMargin=0.7 * inch,
@@ -190,9 +192,7 @@ def compose_pdf(
                 logger.warning(f"Skipping malformed section: {section}")
 
     doc.build(flowables)
-    logger.info(f"PDF written to {output_path}")
-
-    return output_path
+    logger.info("PDF built successfully")
 
 
 BULLET_STYLE = ParagraphStyle(

@@ -31,7 +31,7 @@ from fastmcp import FastMCP
 from llm_planner.chart_planner import generate_plan
 from llm_planner.plan_validator import validate_plan
 from pdf_builder.report_composer import compose_pdf
-from blob_uploader import upload_pdf_to_blob
+from blob_uploader import upload_pdf_bytes_to_blob
 
 logging.basicConfig(
     level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP(os.getenv('MCP_SERVER_NAME', 'PDF Report MCP Server'))
 
-TEMP_PDF_DIR = Path("temp_pdfs")
 
 
 @mcp.tool(
@@ -137,10 +136,10 @@ def generate_pdf_report_tool(
         }
 
     filename = f"report_{uuid.uuid4().hex[:10]}.pdf"
-    output_path = TEMP_PDF_DIR / filename
+    pdf_buffer = io.BytesIO()
 
     try:
-        compose_pdf(plan, data, output_path)
+        compose_pdf(plan, data, pdf_buffer)
     except Exception as e:
         logger.exception("PDF composition failed")
         return {
@@ -148,14 +147,11 @@ def generate_pdf_report_tool(
             "error": f"Failed to compose PDF: {e}",
         }
 
-    logger.info(f"PDF successfully generated at {output_path}")
+    pdf_buffer.seek(0)
+    logger.info("PDF generated in memory, uploading to blob storage")
 
     try:
-        pdf_url = upload_pdf_to_blob(output_path, filename)
-        try:
-            output_path.unlink()
-        except Exception:
-            logger.warning(f"Failed to delete local temp file {output_path}")
+        pdf_url = upload_pdf_bytes_to_blob(pdf_buffer.read(), filename)
     except Exception as e:
         logger.exception("Blob upload failed")
         return {
@@ -171,7 +167,7 @@ def generate_pdf_report_tool(
 
 
 if __name__ == "__main__":
-    TEMP_PDF_DIR.mkdir(parents=True, exist_ok=True)
+    
 
     logger.info("Starting PDF Report MCP Server (SSE transport)...")
     print(f"Starting {os.getenv('MCP_SERVER_NAME', 'PDF Report MCP Server')}")
