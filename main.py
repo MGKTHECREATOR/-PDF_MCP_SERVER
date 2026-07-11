@@ -21,6 +21,8 @@ load_dotenv()
 import os
 import uuid
 import logging
+import io
+import pandas as pd 
 from pathlib import Path
 from typing import Any, Optional
 
@@ -29,6 +31,7 @@ from fastmcp import FastMCP
 from llm_planner.chart_planner import generate_plan
 from llm_planner.plan_validator import validate_plan
 from pdf_builder.report_composer import compose_pdf
+from blob_uploader import upload_pdf_to_blob
 
 logging.basicConfig(
     level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
@@ -62,7 +65,7 @@ def health_check_tool() -> dict:
 
 
 @mcp.tool(
-    name="generate_pdf_report",
+    name="generate_report",
     description=(
         "Generates a PDF report with tables and data visualizations (bar, "
         "horizontal bar, pie, and line charts) from structured JSON data. "
@@ -72,9 +75,11 @@ def health_check_tool() -> dict:
     )
 )
 def generate_pdf_report_tool(
-    report_type: str,
-    data: list[dict[str, Any]],
-    user_instructions: Optional[str] = None,
+    report_title: str,
+    dataset: str,
+    dashboard_items: list[str],
+    generate_pdf: bool = True,
+    publish_powerbi: bool = True,
 ) -> dict:
     """
     Args:
@@ -96,6 +101,11 @@ def generate_pdf_report_tool(
             filename: the generated PDF's filename
             error: present only if status is "error"
     """
+
+    df = pd.read_csv(io.StringIO(dataset))
+    data = df.fillna("").to_dict(orient="records")
+    report_type = report_title
+    user_instructions = "; ".join(item for item in dashboard_items if item.strip()) or None
     total_records = len(data)
     logger.info(
         f"generate_pdf_report called — report_type={report_type}, "
@@ -140,11 +150,23 @@ def generate_pdf_report_tool(
 
     logger.info(f"PDF successfully generated at {output_path}")
 
+    try:
+        pdf_url = upload_pdf_to_blob(output_path, filename)
+        try:
+            output_path.unlink()
+        except Exception:
+            logger.warning(f"Failed to delete local temp file {output_path}")
+    except Exception as e:
+        logger.exception("Blob upload failed")
+        return {
+            "status": "error",
+            "error": f"PDF generated but failed to upload to storage: {e}",
+        }
+
     return {
         "status": "success",
-        "pdf_path": str(output_path.resolve()),
+        "pdf_path": pdf_url,
         "filename": filename,
-        "note": "This is a LOCAL file path — Azure Blob upload not yet wired in.",
     }
 
 
