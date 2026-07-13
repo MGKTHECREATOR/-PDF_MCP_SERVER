@@ -2,7 +2,8 @@
 """
 main.py
 MCP server entrypoint for the PDF report generator.
-Uses FastMCP with SSE transport for Igentic Studio compatibility.
+Uses FastMCP with HTTP/ASGI transport (Streamable HTTP) for
+Azure App Service / Igentic Studio compatibility.
 
 generate_pdf_report is the real tool: takes JSON data from
 Data_Fetcher_Agent, plans visualizations via Gemini, renders a PDF,
@@ -78,7 +79,6 @@ def generate_pdf_report_tool(
     dataset: str,
     dashboard_items: list[str],
     generate_pdf: bool = True,
-    publish_powerbi: bool = True,
 ) -> dict:
     """
     Args:
@@ -166,13 +166,19 @@ def generate_pdf_report_tool(
     }
 
 
-if __name__ == "__main__":
-    
+# --------------------------------------------------
+# Expose ASGI app for Azure / gunicorn
+# --------------------------------------------------
+app = mcp.http_app(
+    path="/mcp",
+    stateless_http=True
+)
 
-    logger.info("Starting PDF Report MCP Server (SSE transport)...")
+if __name__ == "__main__":
+    import uvicorn
+
+    logger.info("Starting PDF Report MCP Server (HTTP/ASGI transport)...")
     print(f"Starting {os.getenv('MCP_SERVER_NAME', 'PDF Report MCP Server')}")
 
     port = int(os.getenv('PORT', 8000))
-    host = os.getenv('HOST', '0.0.0.0')
-
-    mcp.run(transport="sse", host=host, port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
