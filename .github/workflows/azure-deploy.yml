@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       # 1. Checkout the project
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,13 +30,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # 3. Validate that the project's dependencies can be installed
+      # 3. Check that Python dependencies install correctly
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Login to Azure using GitHub OIDC
+      # 4. Authenticate to Azure using GitHub OIDC
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -45,7 +44,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: 76384605-20e8-4010-a7c1-a153bc100440
 
-      # 5. Tell Azure App Service to install Python dependencies
+      # 5. Enable Azure App Service build automation
       - name: Enable Azure build
         run: |
           az webapp config appsettings set \
@@ -53,22 +52,22 @@ jobs:
             --name "${{ env.AZURE_WEBAPP_NAME }}" \
             --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
 
-      # 6. Configure the MCP server startup command
+      # 6. Configure startup.sh
       - name: Configure startup command
         run: |
           az webapp config set \
             --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
             --name "${{ env.AZURE_WEBAPP_NAME }}" \
-            --startup-file "bash startup.sh"
+            --startup-file "startup.sh"
 
-      # 7. Deploy the complete project
+      # 7. Deploy the project
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: .
 
-      # 8. Logout from Azure
+      # 8. Logout
       - name: Logout from Azure
         run: |
           az logout
