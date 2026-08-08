@@ -39,6 +39,7 @@ jobs:
           tar -czf release.tar.gz \
             --exclude='.git' \
             --exclude='antenv' \
+            --exclude='release.tar.gz' \
             .
 
       - name: Upload deployment artifact
