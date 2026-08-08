@@ -69,8 +69,16 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: 76384605-20e8-4010-a7c1-a153bc100440
 
+      - name: Enable Azure build
+        run: |
+          az webapp config appsettings set \
+            --resource-group IntelliReport \
+            --name intellireport-mcp \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           package: ./app
+          startup-command: "bash startup.sh"
