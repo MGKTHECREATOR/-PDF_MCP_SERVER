@@ -169,16 +169,32 @@ def generate_pdf_report_tool(
 # --------------------------------------------------
 # Expose ASGI app for Azure / gunicorn
 # --------------------------------------------------
+
+AZURE_HOST = "intellireport-mcp-f5bjhefshwe3bacq.centralindia-01.azurewebsites.net"
+
 app = mcp.http_app(
     path="/mcp",
-    stateless_http=True
+    stateless_http=True,
+    host_origin_protection=True,
+    allowed_hosts=[
+        AZURE_HOST,
+    ],
+    allowed_origins=[
+        f"https://{AZURE_HOST}",
+    ],
 )
 
 if __name__ == "__main__":
     import uvicorn
 
     logger.info("Starting PDF Report MCP Server (HTTP/ASGI transport)...")
-    print(f"Starting {os.getenv('MCP_SERVER_NAME', 'PDF Report MCP Server')}")
+    print(
+        f"Starting {os.getenv('MCP_SERVER_NAME', 'PDF Report MCP Server')}"
+    )
 
-    port = int(os.getenv('PORT', 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port
+    )
